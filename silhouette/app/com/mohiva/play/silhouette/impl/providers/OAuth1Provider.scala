@@ -323,4 +323,6 @@ case class OAuth1Settings(
  * @param token  The consumer token.
  * @param secret The consumer secret.
  */
-case class OAuth1Info(token: String, secret: String) extends AuthInfo
+case class OAuth1Info(token: String, secret: String) extends SocialAuthInfo {
+  val userState = None
+}

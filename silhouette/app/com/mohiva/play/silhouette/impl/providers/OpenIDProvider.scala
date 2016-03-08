@@ -172,4 +172,6 @@ case class OpenIDSettings(
  * @param id The openID.
  * @param attributes The attributes returned from the provider.
  */
-case class OpenIDInfo(id: String, attributes: Map[String, String]) extends AuthInfo
+case class OpenIDInfo(id: String, attributes: Map[String, String]) extends SocialAuthInfo {
+  val userState = None
+}

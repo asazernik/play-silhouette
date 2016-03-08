@@ -21,7 +21,7 @@ import com.mohiva.play.silhouette.api.{ AuthInfo, LoginInfo, Provider }
 import com.mohiva.play.silhouette.impl.exceptions.ProfileRetrievalException
 import com.mohiva.play.silhouette.impl.providers.SocialProfileBuilder._
 import org.apache.commons.lang3.reflect.TypeUtils
-import play.api.mvc.{ RequestHeader, Result }
+import play.api.mvc.{Request, RequestHeader, Result}
 
 import scala.concurrent.Future
 import scala.reflect.ClassTag
@@ -39,7 +39,7 @@ trait SocialProvider extends Provider with SocialProfileBuilder with ExecutionCo
   /**
    * The type of the auth info.
    */
-  type A <: AuthInfo
+  type A <: SocialAuthInfo
 
   /**
    * The settings type.
@@ -293,4 +293,8 @@ trait CommonSocialProfileBuilder {
    * The type of the profile a profile builder is responsible for.
    */
   type Profile = CommonSocialProfile
+}
+
+trait SocialAuthInfo extends AuthInfo {
+  val userState: Option[String]
 }

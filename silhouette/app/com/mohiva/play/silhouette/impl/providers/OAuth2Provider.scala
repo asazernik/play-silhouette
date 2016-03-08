@@ -48,7 +48,8 @@ case class OAuth2Info(
   tokenType: Option[String] = None,
   expiresIn: Option[Int] = None,
   refreshToken: Option[String] = None,
-  params: Option[Map[String, String]] = None) extends AuthInfo
+  params: Option[Map[String, String]] = None,
+  userState: Option[String] = None) extends SocialAuthInfo
 
 /**
  * The Oauth2 info companion object.

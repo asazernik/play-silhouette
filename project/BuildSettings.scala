@@ -46,7 +46,8 @@ object BasicSettings extends AutoPlugin {
       "-Ywarn-dead-code", // Warn when dead code is identified.
       "-Ywarn-inaccessible", // Warn about inaccessible types in method signatures.
       "-Ywarn-nullary-override", // Warn when non-nullary overrides nullary, e.g. def foo() over def foo.
-      "-Ywarn-numeric-widen" // Warn when numerics are widened.
+      "-Ywarn-numeric-widen", // Warn when numerics are widened.
+      "-Xmax-classfile-name", "130"
     ),
     scalacOptions in Test ~= { (options: Seq[String]) =>
       options filterNot (_ == "-Ywarn-dead-code") // Allow dead code in tests (to support using mockito).

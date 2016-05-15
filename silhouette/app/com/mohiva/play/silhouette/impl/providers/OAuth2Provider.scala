@@ -116,18 +116,8 @@ trait OAuth2Provider extends SocialProvider with OAuth2Constants with Logger {
    */
   def initiateAuthentication[B](userState: Option[String])(implicit request: ExtractableRequest[B]): Future[Result] = {
     stateProvider.build.map { csrfState =>
-
-      val stateParamValue = Json.obj() ++
-        (csrfState.serialize match {
-          case csrfString if csrfString.isEmpty => Json.obj()
-          case csrfString => Json.obj(CsrfState -> csrfString)
-        }) ++
-        (userState match {
-          case None => Json.obj()
-          case Some(reallyUserState)  => Json.obj(UserState -> reallyUserState)
-        })
-
-      val stateParam = if (stateParamValue.value.isEmpty) List() else List(State -> Base64.encode(stateParamValue))
+      val serializedState = csrfState.serialize
+      val stateParam = if (serializedState.isEmpty) List() else List(State -> serializedState)
       val params = settings.scope.foldLeft(List(
         (ClientID, settings.clientID),
         (RedirectURI, resolveCallbackURL(settings.redirectURL)),
@@ -238,12 +228,6 @@ object OAuth2Provider extends OAuth2Constants {
   val AuthorizationURLUndefined = "[Silhouette][%s] Authorization URL is undefined"
   val AuthorizationError = "[Silhouette][%s] Authorization server returned error: %s"
   val InvalidInfoFormat = "[Silhouette][%s] Cannot build OAuth2Info because of invalid response format: %s"
-
-  /**
-   * Constants used in the Silhouette-specific format of the OAuth2 state
-   */
-  val CsrfState = "csrf_state"
-  val UserState = "user_state"
 }
 
 /**

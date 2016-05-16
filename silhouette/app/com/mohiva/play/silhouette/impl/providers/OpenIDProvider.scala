@@ -51,22 +51,40 @@ trait OpenIDProvider extends SocialProvider with OpenIDConstants with Logger {
    * @return Either a Result or the auth info from the provider.
    */
   def authenticate[B]()(implicit request: ExtractableRequest[B]): Future[Either[Result, OpenIDInfo]] = {
-    request.extractString(Mode) match {
-      // Tries to verify the user after the provider has redirected back to the application
-      case Some(_) => service.verifiedID.map(info => Right(info)).recover {
-        case e => throw new UnexpectedResponseException(ErrorVerification.format(id, e.getMessage), e)
-      }
-      // Starts the OpenID authentication process
-      case None =>
-        // Either we get the openID from request or we use the provider ID to retrieve the redirect URL
-        val openID = request.extractString(OpenID).getOrElse(settings.providerURL)
-        service.redirectURL(openID, resolveCallbackURL(settings.callbackURL)).map { url =>
-          val redirect = Results.Redirect(url)
-          logger.debug("[Silhouette][%s] Redirecting to: %s".format(id, url))
-          Left(redirect)
-        }.recover {
-          case e => throw new UnexpectedResponseException(ErrorRedirectURL.format(id, e.getMessage), e)
-        }
+    // every OpenID message should contain an openid.mode param
+    if (request.extractString(Mode).nonEmpty) continueAuthentication()
+    else initiateAuthentication(None).map(Left(_))
+  }
+
+  /**
+   * dummy
+   *
+   * @param userState A piece of state to include in the resulting AuthInfo in case of success
+   * @param request The request
+   * @return A Result (usually a Redirect) to send to the browser which will start it on the appropriate flow
+   */
+  def initiateAuthentication[B](userState: Option[String])(implicit request: ExtractableRequest[B]): Future[Result] = {
+    // Either we get the openID from request or we use the provider ID to retrieve the redirect URL
+    val openID = request.extractString(OpenID).getOrElse(settings.providerURL)
+    service.redirectURL(openID, resolveCallbackURL(settings.callbackURL)).map { url =>
+      logger.debug("[Silhouette][%s] Redirecting to: %s".format(id, url))
+      Results.Redirect(url)
+    }.recover {
+      case e => throw new UnexpectedResponseException(ErrorRedirectURL.format(id, e.getMessage), e)
+    }
+  }
+
+  /**
+   * dummy
+   *
+   * @param request The request
+   * @tparam B
+   * @return Either a Result to continue the flow or the AuthInfo from the provider.
+   */
+  def continueAuthentication[B]()(implicit request: ExtractableRequest[B]): Future[Either[Result, A]] = {
+    // Tries to verify the user after the provider has redirected back to the application
+    service.verifiedID.map(info => Right(info)).recover {
+      case e => throw new UnexpectedResponseException(ErrorVerification.format(id, e.getMessage), e)
     }
   }
 }

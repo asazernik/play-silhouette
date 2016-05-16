@@ -101,36 +101,64 @@ trait OAuth2Provider extends SocialProvider with OAuth2Constants with Logger {
    * @return Either a Result or the auth info from the provider.
    */
   def authenticate[B]()(implicit request: ExtractableRequest[B]): Future[Either[Result, OAuth2Info]] = {
-    request.extractString(Error).map {
-      case e @ AccessDenied => new AccessDeniedException(AuthorizationError.format(id, e))
-      case e                => new UnexpectedResponseException(AuthorizationError.format(id, e))
-    } match {
-      case Some(throwable) => Future.failed(throwable)
-      case None => request.extractString(Code) match {
-        // We're being redirected back from the authorization server with the access code
-        case Some(code) => stateProvider.validate.flatMap { state =>
-          getAccessToken(code).map(oauth2Info => Right(oauth2Info))
-        }
-        // There's no code in the request, this is the first step in the OAuth flow
-        case None => stateProvider.build.map { state =>
-          val serializedState = state.serialize
-          val stateParam = if (serializedState.isEmpty) List() else List(State -> serializedState)
-          val params = settings.scope.foldLeft(List(
-            (ClientID, settings.clientID),
-            (RedirectURI, resolveCallbackURL(settings.redirectURL)),
-            (ResponseType, Code)) ++ stateParam ++ settings.authorizationParams.toList) {
-            case (p, s) => (Scope, s) :: p
-          }
-          val encodedParams = params.map { p => encode(p._1, "UTF-8") + "=" + encode(p._2, "UTF-8") }
-          val url = settings.authorizationURL.getOrElse {
-            throw new ConfigurationException(AuthorizationURLUndefined.format(id))
-          } + encodedParams.mkString("?", "&", "")
-          val redirect = stateProvider.publish(Results.Redirect(url), state)
-          logger.debug("[Silhouette][%s] Use authorization URL: %s".format(id, settings.authorizationURL))
-          logger.debug("[Silhouette][%s] Redirecting to: %s".format(id, url))
-          Left(redirect)
+    if (request.extractString(Error).orElse(request.extractString(Code)).nonEmpty)
+      continueAuthentication()
+    else initiateAuthentication(None).map(Left(_))
+  }
+
+  /**
+   * Redirects the user to the provider's OAuth endpoint
+   *
+   * @param userState A piece of state to include in the resulting AuthInfo in case of success
+   * @param request The initial request
+   * @return A Result (usually a Redirect) to send to the browser which will start it on the appropriate flow
+   */
+  def initiateAuthentication[B](userState: Option[String])(implicit request: ExtractableRequest[B]): Future[Result] = {
+    stateProvider.build.map { csrfState =>
+      val serializedState = csrfState.serialize
+      val stateParam = if (serializedState.isEmpty) List() else List(State -> serializedState)
+      val params = settings.scope.foldLeft(List(
+        (ClientID, settings.clientID),
+        (RedirectURI, resolveCallbackURL(settings.redirectURL)),
+        (ResponseType, Code)) ++ stateParam ++ settings.authorizationParams.toList) {
+        case (p, s) => (Scope, s) :: p
+      }
+      val encodedParams = params.map { p => encode(p._1, "UTF-8") + "=" + encode(p._2, "UTF-8") }
+      val url = settings.authorizationURL.getOrElse {
+        throw new ConfigurationException(AuthorizationURLUndefined.format(id))
+      } + encodedParams.mkString("?", "&", "")
+      val redirect = stateProvider.publish(Results.Redirect(url), csrfState)
+      logger.debug("[Silhouette][%s] Use authorization URL: %s".format(id, settings.authorizationURL))
+      logger.debug("[Silhouette][%s] Redirecting to: %s".format(id, url))
+      redirect
+    }
+  }
+
+  /**
+   * Checks a callback from
+   *
+   * @param request The request
+   * @tparam B
+   * @return Either a Result to continue the flow or the AuthInfo from the provider.
+   */
+  def continueAuthentication[B]()(implicit request: ExtractableRequest[B]): Future[Either[Result, OAuth2Info]] = {
+    (request.extractString(Error), request.extractString(Code)) match {
+
+      // The authorization server returned an error instead of a code
+      case (Some(error), None) => Future.failed {
+        error match {
+          case e @ AccessDenied => new AccessDeniedException(AuthorizationError.format(id, e))
+          case e                => new UnexpectedResponseException(AuthorizationError.format(id, e))
         }
       }
+
+      // We're being redirected back from the authorization server with the access code
+      case (None, Some(code)) => stateProvider.validate.flatMap { state =>
+        getAccessToken(code).map(oauth2Info => Right(oauth2Info))
+      }
+
+      case _ => Future.failed(new UnexpectedResponseException(InvalidInfoFormat.format(id,
+        "exactly one of code or error should have been set in callback")))
     }
   }
 

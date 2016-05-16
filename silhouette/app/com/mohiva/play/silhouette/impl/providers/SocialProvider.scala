@@ -84,6 +84,26 @@ trait SocialProvider extends Provider with SocialProfileBuilder with ExecutionCo
   def authenticate[B]()(implicit request: ExtractableRequest[B]): Future[Either[Result, A]]
 
   /**
+   * Creates the initial redirect for an authentication flow
+   *
+   * @param userState A piece of state to include in the resulting AuthInfo in case of success
+   * @param request The initial request
+   * @return A Result (usually a Redirect) to send to the browser which will start it on the appropriate flow
+   */
+  def initiateAuthentication[B](userState: Option[String])(implicit request: ExtractableRequest[B]): Future[Result]
+
+  /**
+   * Continues an authentication flow initiated by initiateAuthentication.
+   *
+   * This should be used only once if you are sure that the request is a part of the respective
+   * authentication protocol, usually by creating an endpoint dedicated to that purpose.
+   *
+   * @param request The request
+   * @return Either a Result to continue the flow or the AuthInfo from the provider.
+   */
+  def continueAuthentication[B]()(implicit request: ExtractableRequest[B]): Future[Either[Result, A]]
+
+  /**
    * Retrieves the user profile for the given auth info.
    *
    * This method can be used to retrieve the profile information for an already authenticated

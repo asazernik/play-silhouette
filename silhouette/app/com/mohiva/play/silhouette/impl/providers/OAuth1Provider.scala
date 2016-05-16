@@ -69,18 +69,55 @@ trait OAuth1Provider extends SocialProvider with OAuth1Constants with Logger {
   protected val tokenSecretProvider: OAuth1TokenSecretProvider
 
   /**
-   * Starts the authentication process.
+   * Either initiates the authentication process, or continues it if it's already in progress
+   *
+   * Note that this is only capable of distinguishing between the initiateAuthentication case and the
+   * access-denied case for providers that actually include a
    *
    * @param request The current request.
    * @tparam B The type of the request body.
    * @return Either a Result or the auth info from the provider.
    */
   def authenticate[B]()(implicit request: ExtractableRequest[B]): Future[Either[Result, OAuth1Info]] = {
+    if (request.extractString(Denied) // hacky check for params normally associated with the OAuth1 protocol
+      .orElse(request.extractString(OAuthVerifier))
+      .orElse(request.extractString(OAuthToken))
+      .nonEmpty)
+      continueAuthentication()
+    else initiateAuthentication(None).map(Left(_))
+  }
+
+  /**
+   * dummy
+   *
+   * @param userState A piece of state to include in the resulting AuthInfo in case of success
+   * @param request The initlal request
+   * @return A Result (usually a Redirect) to send to the browser which will start it on the appropriate flow
+   */
+  def initiateAuthentication[B](userState: Option[String])(implicit request: ExtractableRequest[B]): Future[Result] = {
+    service.retrieveRequestToken(resolveCallbackURL(settings.callbackURL)).flatMap { info =>
+      tokenSecretProvider.build(info).map { tokenSecret =>
+        val url = service.redirectUrl(info.token)
+        val redirect = Results.Redirect(url)
+        logger.debug("[Silhouette][%s] Redirecting to: %s".format(id, url))
+        tokenSecretProvider.publish(redirect, tokenSecret)
+      }
+    }.recover {
+      case e => throw new UnexpectedResponseException(ErrorRequestToken.format(id), e)
+    }
+  }
+
+  /**
+   * dummy
+   *
+   * @param request The request
+   * @tparam B
+   * @return Either a Result to continue the flow or the AuthInfo from the provider.
+   */
+  def continueAuthentication[B]()(implicit request: ExtractableRequest[B]): Future[Either[Result, A]] = {
     request.extractString(Denied) match {
       case Some(_) => Future.failed(new AccessDeniedException(AuthorizationError.format(id, Denied)))
       case None => request.extractString(OAuthVerifier) -> request.extractString(OAuthToken) match {
-        // Second step in the OAuth flow.
-        // We have received the verifier and the request token, and we need to swap it for the access token.
         case (Some(verifier), Some(token)) => tokenSecretProvider.retrieve.flatMap { tokenSecret =>
           service.retrieveAccessToken(OAuth1Info(token, tokenSecret.value), verifier).map { info =>
             Right(info)
@@ -88,18 +125,7 @@ trait OAuth1Provider extends SocialProvider with OAuth1Constants with Logger {
             case e => throw new UnexpectedResponseException(ErrorAccessToken.format(id), e)
           }
         }
-        // The oauth_verifier field is not in the request.
-        // This is the first step in the OAuth flow. We need to get the request tokens.
-        case _ => service.retrieveRequestToken(resolveCallbackURL(settings.callbackURL)).flatMap { info =>
-          tokenSecretProvider.build(info).map { tokenSecret =>
-            val url = service.redirectUrl(info.token)
-            val redirect = Results.Redirect(url)
-            logger.debug("[Silhouette][%s] Redirecting to: %s".format(id, url))
-            Left(tokenSecretProvider.publish(redirect, tokenSecret))
-          }
-        }.recover {
-          case e => throw new UnexpectedResponseException(ErrorRequestToken.format(id), e)
-        }
+        case _ => Future.failed(new AccessDeniedException(Unauthorized.format(id)))
       }
     }
   }
@@ -114,6 +140,7 @@ object OAuth1Provider extends OAuth1Constants {
    * The error messages.
    */
   val AuthorizationError = "[Silhouette][%s] Authorization server returned error: %s"
+  val Unauthorized = "[Sihouette][%s] Authorization server returned no verifier/token"
   val ErrorAccessToken = "[Silhouette][%s] Error retrieving access token"
   val ErrorRequestToken = "[Silhouette][%s] Error retrieving request token"
 }

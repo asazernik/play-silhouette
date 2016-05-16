@@ -23,7 +23,7 @@ import java.net.URLEncoder._
 
 import com.mohiva.play.silhouette.api._
 import com.mohiva.play.silhouette.api.exceptions._
-import com.mohiva.play.silhouette.api.util.ExtractableRequest
+import com.mohiva.play.silhouette.api.util.{ Base64, ExtractableRequest }
 import com.mohiva.play.silhouette.impl.exceptions.{ AccessDeniedException, UnexpectedResponseException }
 import com.mohiva.play.silhouette.impl.providers.OAuth2Provider._
 import play.api.libs.functional.syntax._
@@ -192,6 +192,27 @@ trait OAuth2Provider extends SocialProvider with OAuth2Constants with Logger {
       error => Failure(new UnexpectedResponseException(InvalidInfoFormat.format(id, error))),
       info => Success(info)
     )
+  }
+
+  case class OAuth2StateParam(
+    csrfState: Option[String], // actually mandatory, but we want to handle the error better than JsonParseException
+    userState: Option[String]
+  )
+
+  implicit val oauth2StateParamFormat = Json.format[OAuth2StateParam]
+
+  /**
+    * Gets the state from request the after the provider has redirected back from the authorization server
+    * with the access code.
+    *
+    * @param request The request.
+    * @tparam B The type of the request body.
+    * @return The OAuth2 state on success, otherwise a failure.
+    */
+  private def extractOAuth2State[B](implicit request: ExtractableRequest[B]) = Try {
+    request.extractString(State).map { oauth2StateBase64 =>
+      Json.parse(Base64.decode(oauth2StateBase64)).as[OAuth2StateParam]
+    }
   }
 }
 

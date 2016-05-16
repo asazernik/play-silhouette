@@ -132,12 +132,20 @@ class CookieStateProvider @Inject() (
    * @tparam B The type of the request body.
    * @return The state on success, otherwise an failure.
    */
-  override def validate[B](implicit request: ExtractableRequest[B], ec: ExecutionContext) = {
-    Future.fromTry(clientState.flatMap(clientState => providerState.flatMap(providerState =>
-      if (clientState != providerState) Failure(new OAuth2StateException(StateIsNotEqual))
-      else if (clientState.isExpired) Failure(new OAuth2StateException(StateIsExpired))
-      else Success(clientState)
-    )))
+  override def validate[B](maybeProviderState: Option[String])(implicit request: ExtractableRequest[B], ec: ExecutionContext) = Future.fromTry {
+    for {
+      providerStateString <- maybeProviderState match {
+        case Some(state) => Success(state)
+        case None => Failure(new OAuth2StateException(ProviderStateDoesNotExists.format(State)))
+      }
+      providerState <- CookieState.unserialize(providerStateString)
+      clientState <- clientState
+      validState <- {
+        if (clientState != providerState) Failure(new OAuth2StateException(StateIsNotEqual))
+        else if (clientState.isExpired) Failure(new OAuth2StateException(StateIsExpired))
+        else Success(clientState)
+      }
+    } yield validState
   }
 
   /**
@@ -170,21 +178,6 @@ class CookieStateProvider @Inject() (
     request.cookies.get(settings.cookieName) match {
       case Some(cookie) => CookieState.unserialize(cookie.value)
       case None         => Failure(new OAuth2StateException(ClientStateDoesNotExists.format(settings.cookieName)))
-    }
-  }
-
-  /**
-   * Gets the state from request the after the provider has redirected back from the authorization server
-   * with the access code.
-   *
-   * @param request The request.
-   * @tparam B The type of the request body.
-   * @return The OAuth2 state on success, otherwise a failure.
-   */
-  private def providerState[B](implicit request: ExtractableRequest[B]): Try[CookieState] = {
-    request.extractString(State) match {
-      case Some(state) => CookieState.unserialize(state)
-      case _           => Failure(new OAuth2StateException(ProviderStateDoesNotExists.format(State)))
     }
   }
 }

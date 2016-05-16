@@ -153,7 +153,7 @@ trait OAuth2Provider extends SocialProvider with OAuth2Constants with Logger {
       }
 
       // We're being redirected back from the authorization server with the access code
-      case (None, Some(code)) => stateProvider.validate.flatMap { state =>
+      case (None, Some(code)) => stateProvider.validate(request.extractString(State)).flatMap { state =>
         getAccessToken(code).map(oauth2Info => Right(oauth2Info))
       }
 
@@ -284,7 +284,7 @@ trait OAuth2StateProvider {
    * @tparam B The type of the request body.
    * @return The state on success, otherwise an failure.
    */
-  def validate[B](implicit request: ExtractableRequest[B], ec: ExecutionContext): Future[State]
+  def validate[B](maybeProviderState: Option[String])(implicit request: ExtractableRequest[B], ec: ExecutionContext): Future[State]
 
   /**
    * Publishes the state to the client.
